@@ -7,6 +7,7 @@ import Html.Attributes exposing (placeholder, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode exposing (Decoder, field, index, string)
+import RemoteData exposing (RemoteData(..), WebData)
 
 
 
@@ -28,14 +29,13 @@ main =
 
 type alias Model =
     { youtubeUrl : String
-    , videoTitle : Maybe String
-    , error : Maybe String
+    , titleData : WebData String
     }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { youtubeUrl = "u7SoNJxOVdE", videoTitle = Nothing, error = Nothing }
+    ( { youtubeUrl = "u7SoNJxOVdE", titleData = NotAsked }
     , Cmd.none
     )
 
@@ -63,10 +63,10 @@ update msg model =
         GotVideoMetadata result ->
             case result of
                 Ok videoTitle ->
-                    ( { model | videoTitle = Just videoTitle }, Cmd.none )
+                    ( { model | titleData = Success videoTitle }, Cmd.none )
 
                 Err error ->
-                    ( { model | error = Just "Loading url failed" }, Cmd.none )
+                    ( { model | titleData = Failure error }, Cmd.none )
 
 
 
@@ -91,28 +91,24 @@ view model =
             , button [ onClick UrlSubmitted ] [ text "Submit" ]
             ]
          ]
-            ++ viewTitle model.videoTitle
-            ++ viewError model.error
+            ++ viewTitle model.titleData
         )
 
 
-viewTitle : Maybe String -> List (Html Msg)
-viewTitle =
-    maybeMapDefault []
-        (\titleStr -> [ text ("Title:" ++ titleStr) ])
+viewTitle : WebData String -> List (Html Msg)
+viewTitle titleData =
+    case titleData of
+        NotAsked ->
+            []
 
+        Loading ->
+            [ text "Loading" ]
 
-viewError : Maybe String -> List (Html Msg)
-viewError =
-    maybeMapDefault []
-        (\msg -> [ text ("Error: " ++ msg) ])
+        Failure err ->
+            [ text "Error loading title" ]
 
-
-{-| Borrowed from elm-maybe-extra, which doesn't seem to be installble in this environment
--}
-maybeMapDefault : b -> (a -> b) -> Maybe a -> b
-maybeMapDefault d f m =
-    Maybe.withDefault d (Maybe.map f m)
+        Success title ->
+            [ text ("Title: " ++ title) ]
 
 
 
