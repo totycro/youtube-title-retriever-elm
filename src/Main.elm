@@ -1,13 +1,17 @@
-module Main exposing (Model, Msg(..), init, main, subscriptions, update, view)
+module Main exposing (Model, Msg(..), init, main, parseVideoId, subscriptions, update, view)
 
 import Browser
 import Config exposing (apiKey)
+import Debug exposing (todo)
 import Html exposing (Html, button, div, input, pre, text)
 import Html.Attributes exposing (placeholder, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode exposing (Decoder, field, index, string)
 import RemoteData exposing (RemoteData(..), WebData)
+import Url
+import Url.Parser exposing ((<?>), query, s, top)
+import Url.Parser.Query
 
 
 
@@ -35,7 +39,7 @@ type alias Model =
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { youtubeUrl = "u7SoNJxOVdE", titleData = NotAsked }
+    ( { youtubeUrl = "https://youtube.com/watch/?v=u7SoNJxOVdE", titleData = NotAsked }
     , Cmd.none
     )
 
@@ -57,9 +61,17 @@ update msg model =
             ( { model | youtubeUrl = newYoutubeUrl }, Cmd.none )
 
         UrlSubmitted ->
-            ( model, loadVideoMetadata model.youtubeUrl apiKey )
+            let
+                videoId =
+                    parseVideoId model.youtubeUrl
+            in
+            case videoId of
+                Just id ->
+                    ( model, loadVideoMetadata id apiKey )
 
-        -- TODO: for now just use interpret full url as video id, later parse video id from url
+                Nothing ->
+                    Debug.todo "error handling :/"
+
         GotVideoMetadata result ->
             case result of
                 Ok videoTitle ->
@@ -67,6 +79,53 @@ update msg model =
 
                 Err error ->
                     ( { model | titleData = Failure error }, Cmd.none )
+
+
+collapseMaybe : Maybe (Maybe a) -> Maybe a
+collapseMaybe =
+    Maybe.andThen identity
+
+
+firstMatch : List (a -> Maybe b) -> a -> Maybe b
+firstMatch transformers data =
+    case transformers of
+        [] ->
+            Nothing
+
+        transformer :: xs ->
+            let
+                result =
+                    transformer data
+            in
+            case result of
+                Just value ->
+                    Just value
+
+                Nothing ->
+                    firstMatch xs data
+
+
+parseVideoId : String -> Maybe String
+parseVideoId youtubeUrl =
+    let
+        parsedUrl =
+            Url.fromString youtubeUrl
+
+        parsers =
+            [ Url.Parser.parse (query (Url.Parser.Query.string "v")) >> collapseMaybe
+            , Url.Parser.parse (s "watch" <?> Url.Parser.Query.string "v") >> collapseMaybe
+            , \url ->
+                -- youtu.be urls just use their path directly. we don't just want to match anything,
+                -- so check the host here
+                if url.host == "youtu.be" then
+                    Url.Parser.parse Url.Parser.string url
+
+                else
+                    Nothing
+            ]
+    in
+    parsedUrl
+        |> Maybe.andThen (firstMatch parsers)
 
 
 
