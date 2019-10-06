@@ -8,7 +8,7 @@ import Html.Attributes exposing (placeholder, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode exposing (Decoder, field, index, string)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Url
 import Url.Parser exposing ((<?>), query, s, top)
 import Url.Parser.Query
@@ -31,9 +31,13 @@ main =
 -- MODEL
 
 
+type alias TitleData =
+    RemoteData String String
+
+
 type alias Model =
     { youtubeUrl : String
-    , titleData : WebData String
+    , titleData : TitleData
     }
 
 
@@ -43,7 +47,9 @@ type VideoId
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { youtubeUrl = "https://youtube.com/watch/?v=u7SoNJxOVdE", titleData = NotAsked }
+    ( { youtubeUrl = "https://youtube.com/watch/?v=u7SoNJxOVdE"
+      , titleData = NotAsked
+      }
     , Cmd.none
     )
 
@@ -71,10 +77,10 @@ update msg model =
             in
             case videoId of
                 Just id ->
-                    ( model, loadVideoMetadata id apiKey )
+                    ( { model | titleData = Loading }, loadVideoMetadata id apiKey )
 
                 Nothing ->
-                    Debug.todo "error handling :/"
+                    ( { model | titleData = Failure "Failed to parse youtube url" }, Cmd.none )
 
         GotVideoMetadata result ->
             case result of
@@ -82,7 +88,7 @@ update msg model =
                     ( { model | titleData = Success videoTitle }, Cmd.none )
 
                 Err error ->
-                    ( { model | titleData = Failure error }, Cmd.none )
+                    ( { model | titleData = Failure "http call error" }, Cmd.none )
 
 
 collapseMaybe : Maybe (Maybe a) -> Maybe a
@@ -159,7 +165,7 @@ view model =
         )
 
 
-viewTitle : WebData String -> List (Html Msg)
+viewTitle : TitleData -> List (Html Msg)
 viewTitle titleData =
     case titleData of
         NotAsked ->
@@ -169,7 +175,7 @@ viewTitle titleData =
             [ text "Loading" ]
 
         Failure err ->
-            [ text "Error loading title" ]
+            [ text <| "Error loading title: " ++ err ]
 
         Success title ->
             [ text ("Title: " ++ title) ]
