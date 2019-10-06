@@ -2,11 +2,12 @@ module Main exposing (Model, Msg(..), VideoId(..), init, main, parseVideoId, sub
 
 import Browser
 import Config exposing (apiKey)
-import Html exposing (Html, button, div, input, pre, text)
-import Html.Attributes exposing (placeholder, value)
+import Html exposing (..)
+import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode exposing (Decoder, field, index, string)
+import List.Extra
 import Maybe.Extra exposing (orElseLazy)
 import RemoteData exposing (RemoteData(..))
 import Url
@@ -36,8 +37,8 @@ type alias TitleData =
 
 
 type alias Model =
-    { youtubeUrl : String
-    , titleData : TitleData
+    { youtubeUrls : String
+    , titleData : List ( Maybe VideoId, TitleData )
     }
 
 
@@ -47,8 +48,8 @@ type VideoId
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { youtubeUrl = "https://youtube.com/watch/?v=u7SoNJxOVdE"
-      , titleData = NotAsked
+    ( { youtubeUrls = "https://youtube.com/watch/?v=u7SoNJxOVdE"
+      , titleData = []
       }
     , Cmd.none
     )
@@ -61,34 +62,63 @@ init _ =
 type Msg
     = UrlUpdated String
     | UrlSubmitted
-    | GotVideoMetadata (Result Http.Error String)
+    | GotVideoMetadata VideoId (Result Http.Error String)
+
+
+parseVideoIds : String -> List (Maybe VideoId)
+parseVideoIds youtubeUrls =
+    let
+        lines =
+            String.split "\n" youtubeUrls
+
+        cleanLines =
+            List.Extra.filterNot String.isEmpty <|
+                List.map String.trim lines
+    in
+    List.map parseVideoId cleanLines
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
-        UrlUpdated newYoutubeUrl ->
-            ( { model | youtubeUrl = newYoutubeUrl }, Cmd.none )
+        UrlUpdated newYoutubeUrls ->
+            ( { model | youtubeUrls = newYoutubeUrls }, Cmd.none )
 
         UrlSubmitted ->
             let
-                videoId =
-                    parseVideoId model.youtubeUrl
+                ( titleData, commands ) =
+                    List.unzip <|
+                        List.map
+                            (\videoId ->
+                                case videoId of
+                                    Just id ->
+                                        ( ( videoId, Loading ), loadVideoMetadata id apiKey )
+
+                                    Nothing ->
+                                        ( ( videoId, Failure "Failed to parse youtube url" ), Cmd.none )
+                            )
+                        <|
+                            parseVideoIds model.youtubeUrls
             in
-            case videoId of
-                Just id ->
-                    ( { model | titleData = Loading }, loadVideoMetadata id apiKey )
+            ( { model | titleData = titleData }, Cmd.batch commands )
 
-                Nothing ->
-                    ( { model | titleData = Failure "Failed to parse youtube url" }, Cmd.none )
-
-        GotVideoMetadata result ->
+        GotVideoMetadata videoId result ->
+            let
+                -- this is not very FP. change titleData to OrderedDict?
+                updateData : TitleData -> List ( Maybe VideoId, TitleData )
+                updateData =
+                    \newData ->
+                        List.Extra.updateIf
+                            (\entry -> Tuple.first entry == Just videoId)
+                            (always ( Just videoId, newData ))
+                            model.titleData
+            in
             case result of
                 Ok videoTitle ->
-                    ( { model | titleData = Success videoTitle }, Cmd.none )
+                    ( { model | titleData = updateData <| Success videoTitle }, Cmd.none )
 
                 Err error ->
-                    ( { model | titleData = Failure "http call error" }, Cmd.none )
+                    ( { model | titleData = updateData <| Failure "http call error" }, Cmd.none )
 
 
 collapseMaybe : Maybe (Maybe a) -> Maybe a
@@ -146,30 +176,35 @@ subscriptions model =
 view : Model -> Html Msg
 view model =
     div []
-        ([ div []
-            [ text "Enter the url: "
-            , input [ placeholder "url", value model.youtubeUrl, onInput UrlUpdated ] []
-            , button [ onClick UrlSubmitted ] [ text "Submit" ]
-            ]
+        ([ div [] [ text "Enter the urls: " ]
+         , div []
+            [ textarea [ cols 80, rows 10, placeholder "url", value model.youtubeUrls, onInput UrlUpdated ] [] ]
+         , div
+            []
+            [ button [ onClick UrlSubmitted ] [ text "Submit" ] ]
          ]
-            ++ viewTitle model.titleData
+            ++ List.concatMap viewTitle model.titleData
         )
 
 
-viewTitle : TitleData -> List (Html Msg)
-viewTitle titleData =
+viewTitle : ( Maybe VideoId, TitleData ) -> List (Html Msg)
+viewTitle ( videoId, titleData ) =
+    let
+        videoIdStr =
+            Maybe.withDefault "" (Maybe.map (\(VideoId x) -> x) videoId)
+    in
     case titleData of
         NotAsked ->
             []
 
         Loading ->
-            [ text "Loading" ]
+            [ div [] [ text "Loading" ] ]
 
         Failure err ->
-            [ text <| "Error loading title: " ++ err ]
+            [ div [] [ text <| "Error loading title \"" ++ videoIdStr ++ "\": " ++ err ] ]
 
         Success title ->
-            [ text ("Title: " ++ title) ]
+            [ div [] [ text ("Title of \"" ++ videoIdStr ++ "\": " ++ title) ] ]
 
 
 
@@ -182,7 +217,9 @@ loadVideoMetadata :
     -> Cmd Msg -- TODO: better type for apiKey config?
 loadVideoMetadata (VideoId videoId) apiKey =
     Http.get
-        { url = "https://www.googleapis.com/youtube/v3/videos?part=snippet&fields=items/snippet/title&id=" ++ videoId ++ "&key=" ++ apiKey, expect = Http.expectJson GotVideoMetadata videoTitleDecoder }
+        { url = "https://www.googleapis.com/youtube/v3/videos?part=snippet&fields=items/snippet/title&id=" ++ videoId ++ "&key=" ++ apiKey
+        , expect = Http.expectJson (GotVideoMetadata (VideoId videoId)) videoTitleDecoder
+        }
 
 
 videoTitleDecoder : Decoder String
