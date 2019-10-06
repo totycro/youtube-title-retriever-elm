@@ -1,4 +1,4 @@
-module Main exposing (Model, Msg(..), init, main, parseVideoId, subscriptions, update, view)
+module Main exposing (Model, Msg(..), VideoId(..), init, main, parseVideoId, subscriptions, update, view)
 
 import Browser
 import Config exposing (apiKey)
@@ -35,6 +35,10 @@ type alias Model =
     { youtubeUrl : String
     , titleData : WebData String
     }
+
+
+type VideoId
+    = VideoId String
 
 
 init : () -> ( Model, Cmd Msg )
@@ -105,7 +109,7 @@ firstMatch transformers data =
                     firstMatch xs data
 
 
-parseVideoId : String -> Maybe String
+parseVideoId : String -> Maybe VideoId
 parseVideoId youtubeUrl =
     let
         parsedUrl =
@@ -126,6 +130,7 @@ parseVideoId youtubeUrl =
     in
     parsedUrl
         |> Maybe.andThen (firstMatch parsers)
+        |> Maybe.map VideoId
 
 
 
@@ -175,10 +180,10 @@ viewTitle titleData =
 
 
 loadVideoMetadata :
-    String
+    VideoId
     -> String
-    -> Cmd Msg -- TODO: bad type signature
-loadVideoMetadata videoId apiKey =
+    -> Cmd Msg -- TODO: better type for apiKey config?
+loadVideoMetadata (VideoId videoId) apiKey =
     Http.get
         { url = "https://www.googleapis.com/youtube/v3/videos?part=snippet&fields=items/snippet/title&id=" ++ videoId ++ "&key=" ++ apiKey, expect = Http.expectJson GotVideoMetadata videoTitleDecoder }
 
