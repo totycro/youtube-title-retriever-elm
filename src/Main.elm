@@ -2,12 +2,12 @@ module Main exposing (Model, Msg(..), VideoId(..), init, main, parseVideoId, sub
 
 import Browser
 import Config exposing (apiKey)
-import Debug exposing (todo)
 import Html exposing (Html, button, div, input, pre, text)
 import Html.Attributes exposing (placeholder, value)
 import Html.Events exposing (onClick, onInput)
 import Http
 import Json.Decode exposing (Decoder, field, index, string)
+import Maybe.Extra exposing (orElseLazy)
 import RemoteData exposing (RemoteData(..))
 import Url
 import Url.Parser exposing ((<?>), query, s, top)
@@ -103,16 +103,7 @@ firstMatch transformers data =
             Nothing
 
         transformer :: xs ->
-            let
-                result =
-                    transformer data
-            in
-            case result of
-                Just value ->
-                    Just value
-
-                Nothing ->
-                    firstMatch xs data
+            transformer data |> orElseLazy (\_ -> firstMatch xs data)
 
 
 parseVideoId : String -> Maybe VideoId
@@ -196,4 +187,4 @@ loadVideoMetadata (VideoId videoId) apiKey =
 
 videoTitleDecoder : Decoder String
 videoTitleDecoder =
-    field "items" (index 0 (field "snippet" (field "title" string)))
+    field "items" <| index 0 <| field "snippet" <| field "title" string
