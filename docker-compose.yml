@@ -1,4 +1,4 @@
-version: '3'
+version: '3.7'
 services:
   elm:
     build: .
@@ -6,3 +6,5 @@ services:
     - .:/mnt
     ports:
     - 8000
+    # we need init to kill elm-test when run with "make test"
+    init: true
