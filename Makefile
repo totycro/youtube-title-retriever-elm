@@ -13,7 +13,9 @@ reactor: build
 	${RUN_IN_DOCKER} -p 8000:8000 elm reactor
 
 test: build
-	# TODO: ctrl-c doesn't seem to reach elm-test when launched this way
+	${RUN_IN_DOCKER} --entrypoint elm-test elm
+
+test-watch: build
 	${RUN_IN_DOCKER} --entrypoint elm-test elm --watch
 
 bash: build
